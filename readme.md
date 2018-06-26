@@ -286,3 +286,79 @@ const
 中。
 有些人认为块作用域不应该完全作为函数作用域的替代方案。两种功能应该同时存在，开
 发者可以并且也应该根据需要选择使用何种作用域，创造可读、可维护的优良代码。
+
+## 提升
+
+### 1. 先鸡先蛋
+直觉上会认为 JavaScript 代码在执行时是由上到下一行一行执行的。但实际上这并不完全
+正确，有一种特殊情况会导致这个假设是错误的
+```JavaScript
+a = 2;
+var a;
+console.log( a );  // 2
+```
+```JavaScript
+console.log( a ); // undefined
+var a = 2;
+```
+### 2. 编译器
+看到 `var a = 2;` 时，可能会认为这是一个声明。但 JavaScript 实际上会将其看成两个
+声明： `var a;` 和 `a = 2;` 。第一个定义声明是在编译阶段进行的。第二个赋值声明会被留在
+原地等待执行阶段。
+
+我们的第一个代码片段会以如下形式进行处理：
+```JavaScript
+var a;
+a = 2;
+console.log( a );
+```
+其中第一部分是编译，而第二部分是执行。
+类似地，我们的第二个代码片段实际是按照以下流程处理的：
+```JavaScript
+var a;
+console.log( a );
+a = 2;
+```
+因此，打个比方，这个过程就好像变量和函数声明从它们在代码中出现的位置被“移动”
+到了最上面。这个过程就叫作提升。
+
+__只有声明本身会被提升，而赋值或其他运行逻辑会留在原地__
+
+注意的是，每个作用域都会进行提升操作
+
+比如：
+```JavaScript
+foo();
+function foo() {
+console.log( a ); // undefined
+var a = 2;
+}
+```
+```JavaScript
+function foo() {
+var a;
+console.log( a ); // undefined
+a = 2;
+}
+foo();
+```
+函数表达式便不会提升
+```JavaScript
+foo(); // 不是 ReferenceError, 而是 TypeError!
+var foo = function bar() {
+// ...
+}
+```
+#### 3. 函数优先
+```JavaScript
+foo(); // 1
+var foo;
+function foo() {
+console.log( 1 );
+}
+foo = function() {
+console.log( 2 );
+};
+```
+#### 4. 小结
+我们习惯将 `var a = 2;` 看作一个声明，而实际上 JavaScript 引擎并不这么认为。它将 `var a`和 `a = 2` 当作两个单独的声明，第一个是编译阶段的任务，而第二个则是执行阶段的任务。这意味着无论作用域中的声明出现在什么地方，都将在代码本身被执行前首先进行处理。可以将这个过程形象地想象成所有的声明（变量和函数）都会被“移动”到各自作用域的最顶端，这个过程被称为提升。
