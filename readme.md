@@ -28,6 +28,7 @@ __代码生成：__ 将AST 转换为可执行代码的过程称被称为代码�
 - __作用域__&emsp;引擎的另一位好朋友，负责收集并维护由所有声明的标识符（变量）组成的一系列查
 询，并实施一套非常严格的规则，确定当前执行的代码对这些标识符的访问权限。
 
+RHS和LHS，查找变量的值和查找容器本身
 #### 2.1工作流程
 _举例：`var a = 2`_
 1. 遇到var a，编译器会询问作用域是否已经有一个该名称的变量存在于同一个作用域的
@@ -349,7 +350,7 @@ var foo = function bar() {
 // ...
 }
 ```
-#### 3. 函数优先
+### 3. 函数优先
 ```JavaScript
 foo(); // 1
 var foo;
@@ -360,5 +361,127 @@ foo = function() {
 console.log( 2 );
 };
 ```
-#### 4. 小结
+### 4. 小结
 我们习惯将 `var a = 2;` 看作一个声明，而实际上 JavaScript 引擎并不这么认为。它将 `var a`和 `a = 2` 当作两个单独的声明，第一个是编译阶段的任务，而第二个则是执行阶段的任务。这意味着无论作用域中的声明出现在什么地方，都将在代码本身被执行前首先进行处理。可以将这个过程形象地想象成所有的声明（变量和函数）都会被“移动”到各自作用域的最顶端，这个过程被称为提升。
+
+## 闭包
+
+定义:当函数可以记住并访问所在的词法作用域时，就产生了闭包，即使函数是在当前词法作用域之外执行。
+
+```JavaScript
+function foo() {
+var a = 2;
+function bar() {
+console.log( a );
+}
+return bar;
+}
+var baz = foo();
+baz(); // 2 —— magical
+```
+解读：
+```
+函数 bar() 的词法作用域能够访问 foo() 的内部作用域。然后我们将 bar() 函数本身当作
+一个值类型进行传递。在这个例子中，我们将 bar 所引用的函数对象本身当作返回值。
+在 foo() 执行后，其返回值（也就是内部的 bar() 函数）赋值给变量 baz 并调用 baz() ，实
+际上只是通过不同的标识符引用调用了内部的函数 bar() 。
+bar() 显然可以被正常执行。但是在这个例子中，它在自己定义的词法作用域以外的地方
+执行。
+在 foo() 执行后，通常会期待 foo() 的整个内部作用域都被销毁，因为我们知道引擎有垃
+圾回收器用来释放不再使用的内存空间。由于看上去 foo() 的内容不会再被使用，所以很
+自然地会考虑对其进行回收。
+而闭包的“神奇”之处正是可以阻止这件事情的发生。事实上内部作用域依然存在，因此
+没有被回收。谁在使用这个内部作用域？原来是 bar() 本身在使用。
+拜 bar() 所声明的位置所赐，它拥有涵盖 foo() 内部作用域的闭包，使得该作用域能够一
+直存活，以供 bar() 在之后任何时间进行引用。
+bar() 依然持有对该作用域的引用，而这个引用就叫作闭包。
+```
+本质上无论何时何地，如果将函数（访问它们各自的词法作用域）当作第一
+级的值类型并到处传递，你就会看到闭包在这些函数中的应用。在定时器、事件监听器、
+Ajax 请求、跨窗口通信、Web Workers 或者任何其他的异步（或者同步）任务中，只要使
+用了回调函数，实际上就是在使用闭包！
+
+### 1. 循环和闭包
+
+```JavaScript
+for (var i=1; i<=5; i++) {
+setTimeout( function timer() {
+console.log( i );
+}, i*1000 );
+}
+```
+
+```JavaScript
+for (var i=1; i<=5; i++) {
+(function(j) {
+setTimeout( function timer() {
+console.log( j );
+}, j*1000 );
+})( i );
+}
+```
+我们使用 IIFE 在每次迭代时都创建一个新的作用域。换句话说，每次迭代我们都需要一个块作用域。第 3 章介绍了 `let` 声明，可以用来劫
+持块作用域，并且在这个块作用域中声明一个变量
+```JavaScript
+for (var i=1; i<=5; i++) {
+let j = i; // 是的，闭包的块作用域！
+setTimeout( function timer() {
+console.log( j );
+}, j*1000 );
+}
+```
+for 循环头部的 let 声明还会有一个特殊的行为。这个行为指出变量在循环过程中不止被声明一次，每次迭代都会声明。随后的每个迭代都会使用上一个迭代结束时的值来初始化这个变量。
+
+```JavaScript
+for (let i=1; i<=5; i++) {
+setTimeout( function timer() {
+console.log( i );
+}, i*1000 );
+}
+```
+
+### 2. 模块
+```JavaScript
+function CoolModule() {
+var something = "cool";
+var another = [1, 2, 3];
+function doSomething() {
+console.log( something );
+}
+function doAnother() {
+console.log( another.join( " ! " ) );
+}
+return {
+doSomething: doSomething,
+doAnother: doAnother
+};
+}
+var foo = CoolModule();
+foo.doSomething(); // cool
+foo.doAnother(); // 1 ! 2 ! 3
+```
+```JavaScript
+var foo = (function CoolModule(id) {
+function change() {
+// 修改公共 API
+publicAPI.identify = identify2;
+}
+function identify1() {
+console.log( id );
+}
+function identify2() {
+console.log( id.toUpperCase() );
+}
+var publicAPI = {
+change: change,
+identify: identify1
+};
+return publicAPI;
+})( "foo module" );
+foo.identify(); // foo module
+foo.change();
+foo.identify(); // FOO MODULE
+```
+### 3. 小结
+当函数可以记住并访问所在的词法作用域，即使函数是在当前词法作用域之外执行，这时
+就产生了闭包。
