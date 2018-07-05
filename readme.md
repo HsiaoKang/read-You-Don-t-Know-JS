@@ -485,3 +485,127 @@ foo.identify(); // FOO MODULE
 ### 3. 小结
 当函数可以记住并访问所在的词法作用域，即使函数是在当前词法作用域之外执行，这时
 就产生了闭包。
+
+## 第二部分：this
+
+一些this的用法
+```JavaScript
+function identify() {
+return this.name.toUpperCase();
+}
+function speak() {
+var greeting = "Hello, I'm " + identify.call( this );
+console.log( greeting );
+}
+var me = {
+name: "Kyle"
+};
+var you = {
+name: "Reader"
+};
+identify.call( me ); // KYLE
+identify.call( you ); // READER
+speak.call( me ); // Hello, 我是 KYLE
+speak.call( you ); // Hello, 我是 READE
+```
+```JavaScript
+function foo() {
+foo.count = 4; // foo 指向它自身
+}
+setTimeout( function(){
+// 匿名（没有名字的）函数无法指向自身
+}, 10 );
+```
+__this 是在运行时进行绑定的，并不是在编写时绑定，它的上下文取决于函数调
+用时的各种条件。 this 的绑定和函数声明的位置没有任何关系，只取决于函数的调用方式__
+
+__当一个函数被调用时，会创建一个活动记录（有时候也称为执行上下文）。这个记录会包
+含函数在哪里被调用（调用栈）、函数的调用方法、传入的参数等信息。 this 就是记录的
+其中一个属性，会在函数执行的过程中用到。__
+
+## this解析
+### 1. 调用位置
+在理解 this 的绑定过程之前，首先要理解调用位置：调用位置就是函数在代码中被调用的
+位置（而不是声明的位置）
+
+### 2. 绑定规则
+
+#### 2.1 默认绑定
+
+```JavaScript
+function foo() {
+console.log( this.a );
+}
+var a = 2;
+foo(); // 2
+```
+注意，声明在全局作用域中的变量（比如 var a = 2 ）就是全局对
+象的一个同名属性。它们本质上就是同一个东西，并不是通过复制得到的，就像一个硬币
+的两面一样。
+
+`foo()`是直接使用不带任何修饰的函数引用进行调用的，因此只能使用默认绑定，无法应用其他规则。
+
+如果使用严格模式（ strict mode ），那么全局对象将无法使用默认绑定，因此 this 会绑定
+到`undefined`
+
+这里有一个微妙但是非常重要的细节，虽然 this 的绑定规则完全取决于调用位置，但是只
+有 foo() 运行在非 strict mode 下时，默认绑定才能绑定到全局对象；严格模式下与 foo()
+的调用位置无关：
+```JavaScript
+function foo() {
+console.log( this.a );
+}
+var a = 2;
+(function(){
+"use strict";
+foo(); // 2
+})();
+```
+
+#### 2.2 隐式绑定
+
+另一条需要考虑的规则是__调用位置__是否有__上下文对象__
+```JavaScript
+function foo() {
+console.log( this.a );
+}
+var obj = {
+a: 2,
+foo: foo
+};
+obj.foo(); // 2
+```
+当函数引用有上下文对象时，隐式绑定规则会把函数调用中的 this 绑定到这个上下文对象。
+
+对象属性引用链中只有最顶层或者说最后一层会影响调用位置。
+```JavaScript
+function foo() {
+console.log( this.a );
+}
+var obj2 = {
+a: 42,
+foo: foo
+};
+var obj1 = {
+a: 2,
+obj2: obj2
+};
+obj1.obj2.foo(); // 42
+```
+
+__隐式丢失__
+```JavaScript
+function foo() {
+console.log( this.a );
+}
+var obj = {
+a: 2,
+foo: foo
+};
+var bar = obj.foo; // 函数别名！
+var a = "oops, global"; // a 是全局对象的属性
+bar(); // "oops, global"
+```
+虽然 bar 是 obj.foo 的一个引用，但是实际上，它引用的是 foo 函数本身，因此此时的bar() 其实是一个不带任何修饰的函数调用，因此应用了默认绑定。回调函数也会类似。
+
+#### 2.3 显式绑定
