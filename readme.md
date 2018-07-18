@@ -529,12 +529,13 @@ __当一个函数被调用时，会创建一个活动记录（有时候也称为
 位置（而不是声明的位置）
 
 ### 2. 绑定规则
+默认绑定在全局，如果__调用__的位置存在对应的上下文，那么绑定到对应的上下文上。可以显式的通过`call`和`apply`绑定到指定上下文，或者使用es5的 `Function.prototype.bind()` 绑定。
 
 #### 2.1 默认绑定
 
 ```JavaScript
 function foo() {
-console.log( this.a );
+  console.log( this.a );
 }
 var a = 2;
 foo(); // 2
@@ -553,12 +554,12 @@ foo(); // 2
 的调用位置无关：
 ```JavaScript
 function foo() {
-console.log( this.a );
+  console.log( this.a );
 }
 var a = 2;
 (function(){
-"use strict";
-foo(); // 2
+  "use strict";
+  foo(); // 2
 })();
 ```
 
@@ -567,11 +568,11 @@ foo(); // 2
 另一条需要考虑的规则是__调用位置__是否有__上下文对象__
 ```JavaScript
 function foo() {
-console.log( this.a );
+  console.log( this.a );
 }
 var obj = {
-a: 2,
-foo: foo
+  a: 2,
+  foo: foo
 };
 obj.foo(); // 2
 ```
@@ -583,12 +584,12 @@ function foo() {
 console.log( this.a );
 }
 var obj2 = {
-a: 42,
-foo: foo
+  a: 42,
+  foo: foo
 };
 var obj1 = {
-a: 2,
-obj2: obj2
+  a: 2,
+  obj2: obj2
 };
 obj1.obj2.foo(); // 42
 ```
@@ -596,11 +597,11 @@ obj1.obj2.foo(); // 42
 __隐式丢失__
 ```JavaScript
 function foo() {
-console.log( this.a );
+  console.log( this.a );
 }
 var obj = {
-a: 2,
-foo: foo
+  a: 2,
+  foo: foo
 };
 var bar = obj.foo; // 函数别名！
 var a = "oops, global"; // a 是全局对象的属性
@@ -609,3 +610,313 @@ bar(); // "oops, global"
 虽然 bar 是 obj.foo 的一个引用，但是实际上，它引用的是 foo 函数本身，因此此时的bar() 其实是一个不带任何修饰的函数调用，因此应用了默认绑定。回调函数也会类似。
 
 #### 2.3 显式绑定
+
+使用 call(..) 和 apply(..) 方法
+它们的第一个参数是一个对象，它们会把这个对象绑定到
+this ，接着在调用函数时指定这个 this
+```JavaScript
+function foo() {
+  console.log( this.a );
+}
+var obj = {
+  a:2
+};
+foo.call( obj ); // 2
+```
+__硬绑定__
+```JavaScript
+function foo() {
+console.log( this.a );
+}
+var obj = {
+a:2
+};
+var bar = function() {
+foo.call( obj );
+};
+bar(); // 2
+setTimeout( bar, 100 ); // 2
+// 硬绑定的 bar 不可能再修改它的 this
+bar.call( window ); // 2
+```
+
+应用场景
+```JavaScript
+// 包裹函数
+function foo(something) {
+  console.log( this.a, something );
+  return this.a + something;
+}
+var obj = {
+  a:2
+};
+var bar = function() {
+  return foo.apply( obj, arguments );
+};
+var b = bar( 3 ); // 2 3
+console.log( b ); // 5
+```
+```JavaScript
+
+function foo(something) {
+  console.log( this.a, something );
+  return this.a + something;
+}
+// 简单的辅助绑定函数
+function bind(fn, obj) {
+  return function() {
+    return fn.apply( obj, arguments );
+  };
+}
+var obj = {
+  a:2
+};
+var bar = bind( foo, obj );
+var b = bar( 3 ); // 2 3
+console.log( b ); // 5
+```
+
+由于硬绑定是一种非常常用的模式，所以在 ES5 中提供了内置的方法 Function.prototype.
+bind ，它的用法如下
+```JavaScript
+function foo(something) {
+  console.log( this.a, something );
+  return this.a + something;
+}
+var obj = {
+  a:2
+};
+var bar = foo.bind( obj );
+var b = bar( 3 ); // 2 3
+console.log( b ); // 5
+```
+
+__API调用的“上下文”__
+
+第三方库的许多函数，以及 JavaScript 语言和宿主环境中许多新的内置函数，都提供了一
+个可选的参数，通常被称为“上下文”（context），其作用和 bind(..) 一样，确保你的回调
+函数使用指定的 this 。
+```JavaScript
+function foo(el) {
+console.log( el, this.id );
+}
+var obj = {
+id: "awesome"
+};
+// 调用 foo(..) 时把 this 绑定到 obj
+[1, 2, 3].forEach( foo, obj );
+// 1 awesome 2 awesome 3 awesome
+```
+
+#### 2.4 new 绑定
+
+构造函数：它们只是被 new 操作符调用的普通函数而已
+
+举例来说，思考一下 Number(..) 作为构造函数时的行为，
+
+ES5.1 中这样描述它：
+```
+15.7.2　Number 构造函数
+当 Number 在 new 表达式中被调用时，它是一个构造函数：它会初始化新创建的
+对象。
+```
+包括内置对象函数（比如 Number(..) ）在内的所有函数都可
+以用 new 来调用，这种函数调用被称为构造函数调用。这里有一个重要但是非常细微的区
+别：实际上并不存在所谓的`构造函数`，只有对于函数的`构造调用`。
+
+使用new或者说发生构造函数调用时会发生下面操作
+1. 创建（或者说构造）一个全新的对象。
+2. 这个新对象会被执行 [[ 原型 ]] 连接。
+3. 这个新对象会绑定到函数调用的 this 。
+4. 如果函数没有返回其他对象，那么 new 表达式中的函数调用会自动返回这个新对象。
+
+```JavaScript
+function foo(a) {
+  this.a = a;
+}
+var bar = new foo(2);
+console.log( bar.a ); // 2
+```
+
+### 3. 优先级
+new > bind()/call/apply > 隐式 > 默认
+
+在new 中使用 硬绑定的话：
+
+_之所以要在 new 中使用硬绑定函数，主要目的是预先设置函数的一些参数，这样在使用
+new 进行初始化时就可以只传入其余的参数。 bind(..) 的功能之一就是可以把除了第一个
+参数（第一个参数用于绑定 this ）之外的其他参数都传给下层的函数（这种技术称为“部
+分应用”，是“柯里化”的一种）。_
+
+```JavaScript
+function foo(p1,p2) {
+  this.val = p1 + p2;
+}
+// 之所以使用 null 是因为在本例中我们并不关心硬绑定的 this 是什么
+// 反正使用 new 时 this 会被修改
+var bar = foo.bind( null, "p1" );
+var baz = new bar( "p2" );
+baz.val; // p1p2
+```
+
+### 4. 绑定例外
+
+#### 4.1.忽略this
+
+使用 apply(..) 来“展开”一个数组，并当作参数传入一个函数
+这两种方法都需要传入一个参数当作 this 的绑定对象。如果函数并不关心 this 的话，你
+仍然需要传入一个占位值，这时 null 可能是一个不错的选择
+```JavaScript
+function foo(a,b) {
+console.log( "a:" + a + ", b:" + b );
+}
+// 把数组“展开”成参数
+foo.apply( null, [2, 3] ); // a:2, b:3
+// 使用 bind(..) 进行柯里化
+var bar = foo.bind( null, 2 );
+bar( 3 ); // a:2, b:3
+```
+
+但是考虑加入了第三方库的话，默认this会被绑定到window，会造成不可预期的影响
+
+更安全的是传入一个__空的非委托对象__,在 JavaScript 中创建一个空对象最简单的方法都是 Object.create(null)
+（详细介绍请看第 5 章）。 Object.create(null) 和 {} 很像，但是并不会创建 Object.
+prototype 这个委托，所以它比 {} “更空”：
+
+```JavaScript
+function foo(a,b) {
+console.log( "a:" + a + ", b:" + b );
+}
+// 我们的 DMZ 空对象
+var ø = Object.create( null );
+// 把数组展开成参数
+foo.apply( ø, [2, 3] ); // a:2, b:3
+// 使用 bind(..) 进行柯里化
+var bar = foo.bind( ø, 2 );
+bar( 3 ); // a:2, b:3
+```
+#### 4.2 间接引用
+```JavaScript
+function foo() {
+console.log( this.a );
+}
+var a = 2;
+var o = { a: 3, foo: foo };
+var p = { a: 4 };
+o.foo(); // 3
+(p.foo = o.foo)(); // 2
+```
+__严格模式， this 会被绑定到 undefined__
+
+#### 4.3. 软绑定
+```JavaScript
+if (!Function.prototype.softBind) {
+  Function.prototype.softBind = function(obj) {
+    var fn = this;
+    // 捕获所有 curried 参数
+    var curried = [].slice.call( arguments, 1 );
+    var bound = function() {
+      return fn.apply(
+        (!this || this === (window || global)) ?
+        obj : this,
+        curried.concat.apply( curried, arguments )
+      );
+    };
+    bound.prototype = Object.create( fn.prototype );
+    return bound;
+  };
+}
+```
+测试如下
+```JavaScript
+function foo() {
+console.log("name: " + this.name);
+}
+var obj = { name: "obj" },
+obj2 = { name: "obj2" },
+obj3 = { name: "obj3" };
+var fooOBJ = foo.softBind( obj );
+fooOBJ(); // name: obj
+obj2.foo = foo.softBind(obj);
+obj2.foo(); // name: obj2 <---- 看！！！
+fooOBJ.call( obj3 ); // name: obj3 <---- 看！
+setTimeout( obj2.foo, 10 );
+// name: obj <---- 应用了软绑定
+```
+### 5. this词法
+
+箭头函数不使用 this 的四种标准规则，而是根据外层（函数或者全局）作用域来决
+定 this
+```JavaScript
+function foo() {
+  // 返回一个箭头函数
+  return (a) => {
+    //this 继承自 foo()
+    console.log( this.a );
+  };
+}
+var obj1 = {
+  a:2
+};
+var obj2 = {
+  a:3
+};
+var bar = foo.call( obj1 );
+bar.call( obj2 ); // 2, 不是 3
+```
+箭头函数最常用于回调函数中，例如事件处理器或者定时器：
+```JavaScript
+function foo() {
+setTimeout(() => {
+// 这里的 this 在此法上继承自 foo()
+console.log( this.a );
+},100);
+}
+var obj = {
+a:2
+};
+foo.call( obj ); // 2
+```
+箭头函数可以像 bind(..) 一样确保函数的 this 被绑定到指定对象，此外，其重要性还体
+现在它用更常见的词法作用域取代了传统的 this 机制
+_注：箭头函数将this绑定在了函数内的词法作用域上，故函数内引用this时会使用当前词法作用域内的this，而非采用传统的this绑定机制（隐式、间接、显式绑定、bind、new）_
+
+本书推荐
+1. 只使用词法作用域并完全抛弃错误 this 风格的代码；
+2. 完全采用 this 风格，在必要时使用 bind(..) ，尽量避免使用 self = this 和箭头函数。
+
+原因是：在同一个函数或者同一个程序中混合使用这两种风格通常会使代码更难维护，并且可能也会更难编写
+
+_注：其目的应该是希望清楚的区分词法作用域和this机制，箭头函数或者self会在this上使用词法作用域机制，在代码上会产生混淆.孰好孰坏不好说，但我个人是比较赞同作者的思想，看似更高的效率其实失去了一些传统的美。_
+
+### 6. 小结
+如果要判断一个运行中函数的 this 绑定，就需要找到这个函数的直接调用位置。找到之后
+就可以顺序应用下面这四条规则来判断 this 的绑定对象。
+1. 由 new 调用？绑定到新创建的对象。
+2. 由 call 或者 apply （或者 bind ）调用？绑定到指定的对象。
+3. 由上下文对象调用？绑定到那个上下文对象。
+4. 默认：在严格模式下绑定到 undefined ，否则绑定到全局对象。
+一定要注意，有些调用可能在无意中使用默认绑定规则。如果想“更安全”地忽略 this 绑
+定，你可以使用一个 DMZ 对象，比如 ø = Object.create(null) ，以保护全局对象。
+ES6 中的箭头函数并不会使用四条标准的绑定规则，而是根据当前的词法作用域来决定
+this ，具体来说，箭头函数会继承外层函数调用的 this 绑定（无论 this 绑定到什么）。这
+其实和 ES6 之前代码中的 self = this 机制一样。
+
+----
+__柯里化(Currying)__
+网上代码不完整，递归部分瞎猜的
+```JavaScript
+// 简单实现，参数只能从右到左传递
+function createCurry(func, args) {
+  var arity = func.length;
+  var args = args || [];
+  return function() {
+    var _args = [].slice.call(arguments);
+    [].push.apply(_args, args);
+    // 如果参数个数小于最初的func.length，则递归调用，继续收集参数
+    if (_args.length<args.length){
+      createCurry(func,_args)
+    }
+  }
+}
+````
