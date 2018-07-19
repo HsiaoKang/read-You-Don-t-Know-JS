@@ -233,7 +233,6 @@ IIFE 还有一种变化的用途是倒置代码的运行顺序,这种模式在 U
 
 ```JavaScript
 var a = 2;
-30 ｜ 第 3 章
 (function IIFE( def ) {
 def( window );
 })(function def( global ) {
@@ -255,7 +254,9 @@ console.log( i );
 #### 一些能够创建块作用域的语句：
 ```JavaScript
 // 1
-with
+with(something){
+    
+}
 // 2
 try {
 
@@ -270,11 +271,12 @@ let
 {
   // 显示的声明一个块级作用域,并用let 将变量绑定在当前作用域上。
   // 在这个块中定义的内容可以被内存回收销毁
+  // 这个应该是指类似 
   let a = 1
 }
 
 // 4
-const
+const b = 0
 ```
 ### 5. 小结
 函数是 JavaScript 中最常见的作用域单元。本质上，声明在一个函数内部的变量或函数会
@@ -779,9 +781,7 @@ bar( 3 ); // a:2, b:3
 
 但是考虑加入了第三方库的话，默认this会被绑定到window，会造成不可预期的影响
 
-更安全的是传入一个__空的非委托对象__,在 JavaScript 中创建一个空对象最简单的方法都是 Object.create(null)
-（详细介绍请看第 5 章）。 Object.create(null) 和 {} 很像，但是并不会创建 Object.
-prototype 这个委托，所以它比 {} “更空”：
+更安全的是传入一个__空的非委托对象__,在 JavaScript 中创建一个空对象最简单的方法都是 Object.create(null)（详细介绍请看第 5 章）。 Object.create(null) 和 {} 很像，但是并不会创建 Object.prototype 这个委托，所以它比 {} “更空”：
 
 ```JavaScript
 function foo(a,b) {
@@ -901,22 +901,484 @@ _注：其目的应该是希望清楚的区分词法作用域和this机制，箭
 ES6 中的箭头函数并不会使用四条标准的绑定规则，而是根据当前的词法作用域来决定
 this ，具体来说，箭头函数会继承外层函数调用的 this 绑定（无论 this 绑定到什么）。这
 其实和 ES6 之前代码中的 self = this 机制一样。
+----
+## 对象
+### 1. 语法
+两种形式
+文字语法（对象字面量）
+```JavaScript
+var myObj = {
+  key: value
+  // ...
+};
+```
+构造函数
+```JavaScript
+var myObj = new Object();
+myObj.key = value;
+```
+### 2. 类型
+JavaScript一共6种主要类型
+- string
+- number
+- boolean
+- null
+- undefined
+- object
+
+ES6中新加入了`Symbol`,第七种。
+
+null 有时会被当作一种对象类型，但是这其实只是语言本身的一个 bug，即对 null 执行
+typeof null 时会返回字符串 "object" 。 1 实际上， null 本身是基本类型。
+
+原理是这样的，不同的对象在底层都表示为二进制，在 JavaScript 中二进制前三位都为 0 的话会被判
+断为 object 类型， null 的二进制表示是全 0，自然前三位也是 0，所以执行 typeof 时会返回“ object ”。
+
+JavaScript 中有许多特殊的对象子类型，我们可以称之为复杂基本类型。
+函数就是对象的一个子类型（从技术角度来说就是“可调用的对象”）。JavaScript 中的函
+数是“一等公民”，因为它们本质上和普通的对象一样（只是可以调用），所以可以像操作
+其他对象一样操作函数（比如当作另一个函数的参数）。
+数组也是对象的一种类型，具备一些额外的行为。数组中内容的组织方式比一般的对象要
+稍微复杂一些。
+
+__内置对象__
+- String
+- Number
+- Boolean
+- Object
+- Function
+- Array
+- Date
+- Regxp
+- Error
+
+在 JavaScript 中，它们实际上只是一些内置函数
+
+```JavaScript
+var strPrimitive = "I am a string";
+typeof strPrimitive; // "string"
+strPrimitive instanceof String; // false
+var strObject = new String( "I am a string" );
+typeof strObject; // "object"
+strObject instanceof String; // true
+// 检查 sub-type 对象
+Object.prototype.toString.call( strObject ); // [object String] 对象子类型
+
+```
+```JavaScript
+var strPrimitive = "I am a string";
+console.log( strPrimitive.length ); // 13
+console.log( strPrimitive.charAt( 3 ) ); // "m"
+```
+必要时语言会自动把字符串字面量转换成一个 String 对象，可以直接在字符串字面量上访问属性或者方法，是因为引擎自动把字面量转换成 String 对象
+
+同样的事也会发生在数值字面量上,对于布尔字面量来说也是如此
+
+null 和 undefined 没有对应的构造形式，它们只有文字形式。相反， Date 只有构造，没有
+文字形式。
+
+Object 、 Array 、 Function 和 RegExp （正则表达式）来说，无论使用文字形式还是构
+造形式，它们都是对象，不是字面量。
+
+Error 一般用不上，本书没有详细说明
+
+### 3. 内容
+
+之前我们提到过，对象的内容是由一些存储在特定命名位置的（任意类型的）值组成的，
+我们称之为属性。
+
+需要强调的一点是，当我们说“内容”时，似乎在暗示这些值实际上被存储在对象内部，
+但是这只是它的表现形式。在引擎内部，这些值的存储方式是多种多样的，__一般并不会存在对象容器内部。存储在对象容器内部的是这些属性的名称，__ 它们就像指针（从技术角度来说就是引用）一样，指向这些值真正的存储位置。
+
+```JavaScript
+var myObject = {
+a: 2
+};
+myObject.a; // 2
+myObject["a"]; // 2
+```
+.a 语法通常被称为“属性访问”， ["a"] 语法通常被称为“键访问”,实际上它们访问的是同一个位置，并且会返回相同的值 2
+
+这两种语法的主要区别在于 . 操作符要求属性名满足标识符的命名规范，而 [".."] 语法
+可以接受 __任意 UTF-8/Unicode__ 字符串作为属性名。举例来说，如果要引用名称为 "Super-
+Fun!" 的属性，那就必须使用 ["Super-Fun!"] 语法访问，因为 Super-Fun! 并不是一个有效
+的标识符属性名。
+
+在对象中，属性名永远都是字符串。如果你使用 string （字面量）以外的其他值作为属性名，那它首先会被转换为一个字符串。即使是数字也不例外，虽然在数组下标中使用的的确是数字，但是在对象属性名中数字会被转换成字符串，所以当心不要搞混 __对象__ 和)__数组__ 中数字的用法：
+
+#### 3.1 可计算属性名
+ES6新增
+```JavaScript
+var prefix = "foo";
+var myObject = {
+[prefix + "bar"]:"hello",
+[prefix + "baz"]: "world"
+};
+myObject["foobar"]; // hello
+myObject["foobaz"]; // world
+```
+可计算属性名最常用的场景可能是 ES6 的符号（Symbol）。
+```javascript
+var myObject = {
+[Symbol.Something]: "hello world"
+}
+```
+#### 3.2 属性和方法
+_这节就是口水仗，主要就是说一个对象的一个属性如果是函数的话，这个严格来说不一定就是这个对象的方法，因为这个函数可以随处引用，和对象的牵连可能也只是this指向的上下文关系_
+
+如果访问的对象属性是一个函数，由于函数很容易被认为是属于某个对象，在其他语言中，属于对象（也被称为“类”）的函数通常被称为“方法”，因此把“属性访问”说成是“方法访问”也就不奇怪了
+
+从技术角度来说，函数永远不会“属于”一个对象，所以把对象内部引用的函数称为“方
+法”似乎有点不妥。
+
+#### 3.3 数组
+数组也是对象，所以虽然每个下标都是整数，你仍然可以给数组添加属性
+```javascript
+var myArray = [ "foo", 42, "bar" ];
+myArray.baz = "baz";
+myArray.length; // 3
+myArray.baz; // "baz"
+```
+
+#### 3.4 复制对象
+为什么没有内置的copy()?
+```javascript
+function anotherFunction() { /*..*/ }
+var anotherObject = {
+c: true
+};
+var anotherArray = [];
+var myObject = {
+a: 2,
+b: anotherObject, // 引用，不是复本！
+c: anotherArray, // 另一个引用！
+d: anotherFunction
+};
+anotherArray.push( anotherObject, myObject );
+```
+对于浅拷贝来说，复制出的新对象中 a 的值会复制旧对象中 a 的值，也就是 2，但是新对象中 b 、 c 、 d 三个属性其实只是三个引用，它们和旧对象中 b 、 c 、 d 引用的对象是一样的。对于深复制来说，除了复制 myObject 以外还会复制 anotherObject 和 anotherArray 。这时问题就来了， anotherArray 引用了 anotherObject 和myObject ，所以又需要复制 myObject ，这样就会由于循环引用导致死循环。
+
+除此之外，我们还不确定“复制”一个函数意味着什么。有些人会通过 toString() 来序列
+化一个函数的源代码
+
+对于 JSON 安全（也就是说可以被序列化为一个 JSON 字符串并且可以根据这个字符串解
+析出一个结构和值完全一样的对象）的对象来说，有一种巧妙的复制方法：
+```javascript
+var newObj = JSON.parse( JSON.stringify( someObj ) );
+```
+这种方法需要保证对象是 JSON 安全的，所以只适用于部分情况。
+
+浅复制非常易懂且问题少得多
+ES6
+```javascript
+var newObj = Object.assign( {}, myObject );
+newObj.a; // 2
+newObj.b === anotherObject; // true
+newObj.c === anotherArray; // true
+newObj.d === anotherFunction; // true
+```
+
+#### 3.5 属性描述符
+从 ES5 开始，所有的属性都具备了属性描述符。
+```javascript
+var myObject = {
+a:2
+};
+Object.getOwnPropertyDescriptor( myObject, "a" );
+// {
+// value: 2,
+// writable: true,
+// enumerable: true,
+// configurable: true
+// }
+```
+__Writeable__
+writable 决定是否可以修改属性的值。
+严格模式抛出错误，非严格模式静默失败
+__Configurable__
+只要属性是可配置的，就可以使用 defineProperty(..) 方法来修改属性描述符,把 configurable 修改成false 是单向操作，无法撤销！，即便属性是 configurable:false ， 我们还是可以把 writable 的状态由 true 改为 false ，但是无法由 false 改为 true 。
+
+除了无法修改， configurable:false 还会禁止删除这个属性
+
+__Enumerable__
+可枚举
+#### 3.6 不变性
+所有的方法创建的都是浅不变形，也就是说，它们只会影响目标对象和
+它的直接属性。如果目标对象引用了其他对象（数组、对象、函数，等），其他对象的内
+容不受影响，仍然是可变的：
+```javascript
+myImmutableObject.foo; // [1,2,3]
+myImmutableObject.foo.push( 4 );
+myImmutableObject.foo; // [1,2,3,4]
+```
+假设代码中的 myImmutableObject 已经被创建而且是不可变的，但是为了保护它的内容
+myImmutableObject.foo ，你还需要使用下面的方法让 foo 也不可变。
+_注：在 JavaScript 程序中很少需要深不可变性。有些特殊情况可能需要这样做，但是根据通用的设计模式，如果你发现需要密封或者冻结所有的对象，那你或许应当退一步，重新思考一下程序的设计，让它能更好地应对对象值的改变。_
+
+__对象常量__
+
+结合 writable:false 和 configurable:false 就可以创建一个真正的常量属性（不可修改、重定义或者删除）：
+```javascript
+var myObject = {};
+Object.defineProperty( myObject, "FAVORITE_NUMBER", {
+value: 42,
+writable: false,
+configurable: false
+} );
+```
+__禁止扩展__
+
+如果你想禁止一个对象添加新属性并且保留已有属性，可以使用 Object.prevent
+Extensions(..) ：
+```javascript
+var myObject = {
+a:2
+};
+Object.preventExtensions( myObject );
+myObject.b = 3;
+myObject.b; // undefined
+```
+
+__密封__
+Object.seal(..) 会创建一个“密封”的对象，这个方法实际上会在一个现有对象上调用
+Object.preventExtensions(..) 并把所有现有属性标记为 configurable:false 。不能配置或者删除现有的值，但是可以修改属性的值
+
+__冻结__
+ject.freeze(..) 会创建一个冻结对象，这个方法实际上会在一个现有对象上调用Object.seal(..) 并把所有“数据访问”属性标记为 writable:false ，这样就无法修改它们的值,这个方法是你可以应用在对象上的级别最高的不可变性，它会禁止对于对象本身及其任意直接属性的修改（不过就像我们之前说过的，这个对象引用的其他对象是不受影响的）。
+
+#### 3.7 [[get]]
+
+```javascript
+var myObject = {
+a: 2
+};
+myObject.a; // 2
+```
+在语言规范中， myObject.a 在 myObject 上实际上是实现了 [[Get]] 操作（有点像函数调用： \[[Get]]() ）,首先会找相同名称的属性，找不到就会遍历原型，原型上没有就返回`undefined`。
+
+这种方法和访问变量时是不一样的。如果你引用了一个当前词法作用域中不存在的变量，并不会像对象属性一样返回 undefined ，而是会抛出一个 ReferenceError 异常。
+
+```javascript
+var myObject = {
+a: undefined
+};
+myObject.a; // undefined
+myObject.b; // undefined
+```
+根据返回值无法判断出到底变量的值为 undefined 还是变量不存在
+
+#### 3.8 [[put]]
+
+[[Put]] 被触发时，实际的行为取决于许多因素，包括对象中是否已经存在这个属性（这
+是最重要的因素）。
+如果已经存在这个属性， [[Put]] 算法大致会检查下面这些内容。
+
+1. 属性是否是访问描述符？如果是并且存在 setter 就调用 setter。
+2. 属性的数据描述符中 writable 是否是 false ？如果是，在非严格模式下静默失败，在严格模式下抛出 TypeError 异常。
+3. 如果都不是，将该值设置为属性的值。
+
+#### 3.9 Getter和Setter
+对象默认的 [[Put]] 和 [[Get]] 操作分别可以控制属性值的设置和获取。在语言的未来 / 高级特性中，有可能可以改写整个对象（不仅仅是某个属性）
+的默认 [[Get]] 和 [[Put]] 操作。
+
+getter 是一个隐藏函数，会在获取属性值时调用。setter 也是一个隐藏函数，会在设置属性值时调用。
+
+```javascript
+var myObject = {
+    get a(){
+        return 2
+    }
+}
+Object.defineProperty(myObject,'b',{
+    // 描述符
+    // 给b一个描述符
+    get:function () {
+        return this.a * 2
+    },
+    // 确保b会出现在对象的属性列表中
+    enumerable:true
+})
+
+
+console.log(myObject.a)
+console.log(myObject.b)
+```
+不管是 __对象文字语法__ 中的 get a() { .. } ，还是 defineProperty(..) 中的 __显式定义__，二者都会在对象中创建一个不包含值的属性，对于这个属性的访问会自动调用一个隐藏函数，__它的返回值会被当作属性访问的返回值__
+
+由于我们只定义了 a 的 getter，所以对 a 的值进行设置时 set 操作会忽略赋值操作，不会抛出错误。
+
+_注：和直接定义一个普通属性不同的是，这里只创建了`myObject`中a和b的get，实际中是不存在a属性和b属性的。_
+
+setter 会覆盖单个属性默认的[[Put]] （也被称为赋值）操作。通常来说 getter 和 setter 是成对出现的（只定义一个的话通常会产生意料之外的行为）：
+```javascript
+var myObject = {
+// 给 a 定义一个 getter
+get a() {
+return this._a_;
+},
+// 给 a 定义一个 setter
+set a(val) {
+this._a_ = val * 2;
+}
+};
+myObject.a = 2;
+myObject.a; // 4
+```
+实际上我们把赋值（ [[Put]] ）操作中的值 2 存储到了另一个变量_a_ 中。名称 _a_ 只是一种惯例，没有任何特殊的行为——和其他普通属性一样。
+
+#### 3.10 存在性
+
+如何区分对象的属性不存在还是属性值是undefined？
+```javascript
+var myObject = {
+a:2
+};
+("a" in myObject); // true
+("b" in myObject); // false
+myObject.hasOwnProperty( "a" ); // true
+myObject.hasOwnProperty( "b" ); // false
+```
+
+in 操作符会检查属性是否在对象及其 [[Prototype]] 原型链中（参见第 5 章）。相比之下，hasOwnProperty(..) 只会检查属性是否在 myObject 对象中，不会检查 [[Prototype]] 链
+
+通过 Object.create(null) 来创建的对象原型上没有hasOwnProperty,这时可以用
+```javascript
+ Object.prototype.hasOwnProperty.call(myObject,"a")
+```
+
+看起来 in 操作符可以检查容器内是否有某个值，但是它实际上检查的是某个属性名是否存在。对于数组来说这个区别非常重要， 4 in [2, 4, 6] 的结果并不是你期待的 True ，因为 [2, 4, 6] 这个数组中包含的属性名是 0、1、2，没有 4。
+
+__枚举__
+
+enumerable 为false 不会出现在for...in中，
+_注：在数组上应用 for..in 循环有时会产生出人意料的结果，因为这种枚举不仅会包含所有数值索引，还会包含所有可枚举属性。最好只在对象上应用for..in 循环，如果要遍历数组就使用传统的 for 循环来遍历数值索引。_
+
+区分属性是否可枚举
+```javascript
+var myObject = { };
+Object.defineProperty(
+myObject,
+"a",
+// 让 a 像普通属性一样可以枚举
+{ enumerable: true, value: 2 }
+);
+Object.defineProperty(
+myObject,
+"b",
+// 让 b 不可枚举
+{ enumerable: false, value: 3 }
+);
+myObject.propertyIsEnumerable( "a" ); // true
+myObject.propertyIsEnumerable( "b" ); // false
+Object.keys( myObject ); // ["a"]
+Object.getOwnPropertyNames( myObject ); // ["a", "b"]
+```
+
+propertyIsEnumerable(..) 会检查给定的属性名是否直接存在于对象中（而不是在原型链上）并且满足 enumerable:true 。
+
+Object.keys(..) 会返回一个数组，包含所有可枚举属性， 
+
+Object.getOwnPropertyNames(..)会返回一个数组，包含所有属性，无论它们是否可枚举。
+
+（目前）并没有内置的方法可以获取 in 操作符使用的属性列表（对象本身的属性以及 [[Prototype]] 链中的所有属性，参见第 5 章）。不过你可以递归遍历某个对象的整条[[Prototype]] 链并保存每一层中使用 Object.keys(..) 得到的属性列表——只包含可枚举属性。
+
+### 4. 遍历
+
+for..in 循环可以用来遍历对象的可枚举属性列表（包括 [[Prototype]] 链）。但是如何遍历属性的值呢？
+
+对于数值索引的数组来说，可以使用标准的 for 循环来遍历值：
+
+这实际上并不是在遍历值，而是遍历下标来指向值，如 myArray[i] 
+```javascript
+var myArray = [1, 2, 3];
+for (var i = 0; i < myArray.length; i++) {
+console.log( myArray[i] );
+}
+// 1 2 3
+```
+ES5 中增加了一些数组的辅助迭代器
+
+forEach(..) 会遍历数组中的所有值并忽略回调函数的返回值
+
+every(..) 会一直运行直到回调函数返回 false （或者“假”值）
+
+some(..) 会一直运行直到回调函数返回 true （或者“真”值）。
+
+使用 for..in 遍历对象是无法直接获取属性值的，因为它实际上遍历的是对象中的所有可枚举属性，你需要手动获取属性值。
+
+_注意:遍历数组下标时采用的是数字顺序（ for 循环或者其他迭代器），但是遍历对象属性时的顺序是不确定的，在不同的 JavaScript 引擎中可能不一样。因此，在不同的环境中需要保证一致性时，一定不要相信任何观察到的顺序，它们是不可靠的。_
+
+ES6 增加了一种用来遍历数组的 for..of 循环语法（如果对象本身定义了迭代器的话也可以遍历对象）
+
+```javascript
+var myArray = [ 1, 2, 3 ];
+for (var v of myArray) {
+console.log( v );
+}
+// 1
+// 2
+// 3
+```
+
+数组有内置的 @@iterator ，因此 for..of 可以直接应用在数组上。我们使用内置的 @@iterator 来手动遍历数组，看看它是怎么工作的：
+```javascript
+var myArray = [ 1, 2, 3 ];
+var it = myArray[Symbol.iterator]();
+it.next(); // { value:1, done:false }
+it.next(); // { value:2, done:false }
+it.next(); // { value:3, done:false }
+it.next(); // { done:true }。 done 是一个布尔值，表示是否还有可以遍历的值。
+```
+
+_注：默认的 Iterator 接口部署在数据结构的Symbol.iterator属性，或者说，一个数据结构只要具有Symbol.iterator属性，就可以认为是“可遍历的”（iterable），Symbol.iterator属性本身是一个函数，就是当前数据结构默认的遍历器生成函数。执行这个函数，就会返回一个迭代器。调用迭代器的 next() 方法会返回形式为 { value: .. , done: .. } 的值
+
+普通的对象没有内置的@@iterator,但是可以自己写一个
+```javascript
+var myObject = {
+    a: 2,
+    b: 3
+};
+Object.defineProperty( myObject, Symbol.iterator, {
+    enumerable: false,
+    writable: false,
+    configurable: true,
+    value: function() {
+        var o = this;
+        var idx = 0;
+        var ks = Object.keys( o );
+        return {
+            next: function() {
+                return {
+                    // 这里是一个闭包，所以每次++ 都能在对象o的基础上
+                    value: o[ks[idx++]],
+                    done: (idx > ks.length)
+                };
+            }
+        };
+    }
+} );
+// 手动遍历 myObject
+var it = myObject[Symbol.iterator]();
+it.next(); // { value:2, done:false }
+it.next(); // { value:3, done:false }
+it.next(); // { value:undefined, done:true }
+// 用 for..of 遍历 myObject
+for (var v of myObject) {
+console.log( v );
+}
+// 2
+// 3
+```
+
+###5. 小结
+对象是 6 个（或者是 7 个，取决于你的观点）基础类型之一。对象有包括 function 在内的子类型，不同子类型具有不同的行为，比如内部标签 [object Array] 表示这是对象的子类型数组
+
+对象就是键 / 值对的集合。可以通过 .propName 或者 ["propName"]语法来获取属性值。访问属性时，引擎实际上会调用内部的默认 [[Get]] 操作（在设置属性值时是 [[Put]] ），[[Get]] 操作会检查对象本身是否包含这个属性，如果没找到的话还会查找 [[Prototype]]链
+
+属性的特性可以通过属性描述符来控制，比如 writable 和 configurable。此外，可以使用Object.preventExtensions(..) 、 Object.seal(..) 和 Object.freeze(..) 来设置对象（及其属性）的不可变性级别。
+
+属性不一定包含值——它们可能是具备 getter/setter 的“访问描述符”。此外，属性可以是可枚举或者不可枚举的，这决定了它们是否会出现在 for..in 循环中。
+
+你可以使用 ES6 的 for..of 语法来遍历数据结构（数组、对象，等等）中的值， for..of会寻找内置或者自定义的 @@iterator 对象并调用它的 next() 方法来遍历数据值。
 
 ----
-__柯里化(Currying)__
-网上代码不完整，递归部分瞎猜的
-```JavaScript
-// 简单实现，参数只能从右到左传递
-function createCurry(func, args) {
-  var arity = func.length;
-  var args = args || [];
-  return function() {
-    var _args = [].slice.call(arguments);
-    [].push.apply(_args, args);
-    // 如果参数个数小于最初的func.length，则递归调用，继续收集参数
-    if (_args.length<args.length){
-      createCurry(func,_args)
-    }
-  }
-}
-````
