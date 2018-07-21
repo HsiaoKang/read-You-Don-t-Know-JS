@@ -1799,3 +1799,404 @@ JavaScript 并不会（像类那样）自动创建对象的副本。
 显式混入实际上无法完全模拟类的复制行为，因为对象（和函数！别忘了函数也是对象）只能复制引用，无法复制被引用的对象或者函数本身。忽视这一点会导致许多问题。
 
 总地来说，在 JavaScript 中模拟类是得不偿失的，虽然能解决当前的问题，但是可能会埋下更多的隐患。
+
+## 原型
+
+### 1. [[Prototype]]
+
+对象的一个内置属性,其实就是对其他对象的引用。
+
+在试图引用一个对象的属性时会触发[[get]]操作（Proxy情况下不适用），[[get]]先找对象的同名属性，没有则去到原型上找,在没有则是返回`undefined`。
+
+```JavaScript
+var anotherObject = {
+a:2
+};
+// 创建一个关联到 anotherObject 的对象
+var myObject = Object.create( anotherObject );
+myObject.a; // 2
+```
+
+使用 for..in 遍历对象时原理和查找 [[Prototype]] 链类似，任何可以通过原型链访问到（并且是 enumerable ，参见第 3 章）的属性都会被枚举。使用 in 操作符来检查属性在对象中是否存在时，同样会查找对象的整条原型链（无论属性是否可枚举）
+
+```JavaScript
+var anotherObject = {
+  a:2
+};
+// 创建一个关联到 anotherObject 的对象
+var myObject = Object.create( anotherObject );
+  for (var k in myObject) {
+  console.log("found: " + k);
+}
+// found: a
+("a" in myObject); // true
+```
+
+当你通过各种语法进行属性查找时都会查找 [[Prototype]] 链，直到找到属性或者查找完整条原型链
+
+#### 1.1 Object.prototype
+
+所有普通的 [[Prototype]] 链最终都会指向内置的 Object.prototype
+
+#### 1.2 属性设置和屏蔽
+
+```JavaScript
+myObject.foo = "bar";
+```
+如果 myObject 对象中包含名为 foo 的普通数据访问属性，这条赋值语句只会修改已有的属性值。
+
+如果 foo 不是直接存在于 myObject 中， [[Prototype]] 链就会被遍历，类似 [[Get]] 操作。如果原型链上找不到 foo ， foo 就会被直接添加到 myObject 上。
+
+如果 foo 存在于原型链上层，会出现的三种情况
+1. 如果在 [[Prototype]] 链上层存在名为 foo 的普通数据访问属性（参见第 3 章）并且没有被标记只读（ writable:false ），那就会直接在 myObject 中添加一个名为 foo 的新属性，它是屏蔽属。
+2. 如果在 [[Prototype]] 链上层存在 foo ，但是它被标记为只读（ writable:false ），那么无法修改已有属性或者在 myObject 上创建屏蔽属性。如果运行在严格模式下，代码会抛出一个错误。否则，这条赋值语句会被忽略。总之，不会发生屏蔽。
+3. 如果在 [[Prototype]] 链上层存在 foo 并且它是一个 setter（参见第 3 章），那就一定会调用这个 setter。 foo 不会被添加到（或者说屏蔽于） myObject ，也不会重新定义 foo 这个 setter
+
+如果你希望在第二种和第三种情况下也屏蔽 foo ，那就不能使用 = 操作符来赋值，而是使
+用 Object.defineProperty(..) 
+
+有毒的代码
+```JavaScript
+var anotherObject = {
+a:2
+};
+var myObject = Object.create( anotherObject );
+anotherObject.a; // 2
+myObject.a; // 2
+146 ｜ 第 5 章
+anotherObject.hasOwnProperty( "a" ); // true
+myObject.hasOwnProperty( "a" ); // false
+myObject.a++; // 隐式屏蔽！
+anotherObject.a; // 2
+myObject.a; // 3
+myObject.hasOwnProperty( "a" ); // true
+```
+
+### 2.类
+
+#### 2.1 "类"函数
+```JavaScript
+function Foo() {
+// ...
+}
+var a = new Foo();
+Object.getPrototypeOf( a ) === Foo.prototype; // true
+```
+
+调用 new Foo() 时会创建 a （具体的 4 个步骤参见第 2 章），其中的一步就是给 a 一个内部的 [[Prototype]] 链接，关联到 Foo.prototype 指向的那个对象。
+
+new Foo() 会生成一个新对象（我们称之为 a ），这个新对象的内部链接 [[Prototype]] 关联的是 Foo.prototype 对象。
+
+最后我们得到了两个对象，它们之间互相关联，就是这样。我们并没有初始化一个类，实际上我们并没有从“类”中复制任何行为到一个对象中，只是让两个对象互相关联。
+
+new Foo() 这个函数调用实际上并没有直接创建关联，这个关联只是一个意外的副作用。 new Foo() 只是间接完成了我们的目标：一个关联到其他对象的新对象。
+
+ Object.create(..)可以做到
+
+__一些名词__
+
+ __继承__ 意味着复制操作，JavaScript（默认）并不会复制对象属性。相反，JavaScript 会在两
+个对象之间创建一个关联，这样一个对象就可以通过 __委托__ 访问另一个对象的属性和函数。
+委托（参见第 6 章）这个术语可以更加准确地描述 JavaScript 中对象的关联机制
+
+还有个偶尔会用到的 JavaScript 术语 __差异继承__。基本原则是在描述对象行为时，使用其不
+同于普遍描述的特质。举例来说，描述汽车时你会说汽车是有四个轮子的一种交通工具，
+但是你不会重复描述交通工具具备的通用特性（比如引擎）。:指其特有的差异
+
+#### 5.2 "构造函数"
+
+```JavaScript
+function Foo() {
+// ...
+}
+Foo.prototype.constructor === Foo; // true
+var a = new Foo();
+a.constructor === Foo; // true
+```
+
+Foo.prototype 默认（在代码中第一行声明时！）有一个公有并且不可枚举（参见第 3 章）的属性 .constructor ，这个属性引用的是对象关联的函数（本例中是 Foo ）。此外，我们可以看到通过“构造函数”调用 new Foo() 创建的对象也有一个 .constructor 属性，指向“创建这个对象的函数”。
+
+_注意：实际上 a 本身并没有 .constructor 属性。而且，虽然 a.constructor 确实指向 Foo 函数，但是这个属性并不是表示 a 由 Foo “构造”_
+
+__构造函数还是调用__
+
+实际上， new 会劫持所有普通函数并用构造对象的形式来调用它
+
+```JavaScript
+function NothingSpecial() {
+console.log( "Don't mind me!" );
+}
+var a = new NothingSpecial();
+// "Don't mind me!"
+a; // {}
+```
+NothingSpecial 只是一个普通的函数，但是使用 new 调用时，它就会构造一个对象并赋值给 a ，这看起来像是 new 的一个副作用（无论如何都会构造一个对象）。这个调用是一个构造函数调用，但是 NothingSpecial 本身并不是一个构造函数
+
+#### 5.3 技术
+```JavaScript
+function Foo(name) {
+this.name = name;
+}
+Foo.prototype.myName = function() {
+return this.name;
+};
+var a = new Foo( "a" );
+var b = new Foo( "b" );
+a.myName(); // "a"
+b.myName(); // "b"
+```
+
+__回顾“构造函数”__
+
+之前讨论 .constructor 属性时我们说过，看起来 a.constructor === Foo 为真意味着 a 确实有一个指向 Foo 的 .constructor 属性，但是事实不是这样
+
+这是一个很不幸的误解。实际上， .constructor 引用同样被委托给了 Foo.prototype ，而Foo.prototype.constructor 默认指向 Foo 。
+
+```JavaScript
+function Foo() { /* .. */ }
+Foo.prototype = { /* .. */ }; // 创建一个新原型对象
+var a1 = new Foo();
+a1.constructor === Foo; // false!
+a1.constructor === Object; // true!
+```
+
+ a1 并没有 .constructor 属性，所以它会委托 [[Prototype]] 链上的 Foo.prototype 。但是这个对象也没有 .constructor 属性（不过默认的 Foo.prototype 对象有这个属性！），所以它会继续委托，这次会委托给委托链顶端的 Object.prototype 。这个对象有 .constructor 属性，指向内置的 Object(..) 函数
+
+ 如果要指定.constructor
+ ```JavaScript
+ function Foo() { /* .. */ }
+Foo.prototype = { /* .. */ }; // 创建一个新原型对象
+// 需要在 Foo.prototype 上“修复”丢失的 .constructor 属性
+// 新对象属性起到 Foo.prototype 的作用
+// 关于 defineProperty(..)，参见第 3 章
+Object.defineProperty( Foo.prototype, "constructor" , {
+enumerable: false,
+writable: true,
+configurable: true,
+value: Foo // 让 .constructor 指向 Foo
+} );
+```
+
+.constructor 并不是一个不可变属性。它是不可枚举（参见上面的代码）的，但是它的值
+是可写的（可以被修改）。此外，你可以给任意 [[Prototype]] 链中的任意对象添加一个名
+为 constructor 的属性或者对其进行修改，你可以任意对其赋值。
+
+结论？一些随意的对象属性引用，比如 a1.constructor ，实际上是不被信任的，它们不一
+定会指向默认的函数引用。此外，很快我们就会看到，稍不留神 a1.constructor 就可能会
+指向你意想不到的地方。
+
+a1.constructor 是一个非常不可靠并且不安全的引用。通常来说要尽量避免使用这些引用。
+
+### 3. (原型)继承
+
+```JavaScript
+function Foo(name) {
+this.name = name;
+}
+Foo.prototype.myName = function() {
+return this.name;
+};
+function Bar(name,label) {
+Foo.call( this, name );
+this.label = label;
+}
+// 我们创建了一个新的 Bar.prototype 对象并关联到 Foo.prototype
+Bar.prototype = Object.create( Foo.prototype );
+// 注意！现在没有 Bar.prototype.constructor 了
+// 如果你需要这个属性的话可能需要手动修复一下它
+Bar.prototype.myLabel = function() {
+return this.label;
+};
+var a = new Bar( "a", "obj a" );
+a.myName(); // "a"
+a.myLabel(); // "obj a"
+```
+注意，下面这两种方式是常见的错误做法，实际上它们都存在一些问题：
+```JavaScript
+// 和你想要的机制不一样！
+Bar.prototype = Foo.prototype;
+// 基本上满足你的需求，但是可能会产生一些副作用 :(
+Bar.prototype = new Foo();
+```
+
+Bar.prototype = Foo.prototype 并不会创建一个关联到 Bar.prototype 的新对象，它只是让 Bar.prototype 直接引用 Foo.prototype 对象。因此当你执行类似 Bar.prototype.myLabel = ... 的赋值语句时会直接修改 Foo.prototype 对象本身。显然这不是你想要的结果，否则你根本不需要 Bar 对象，直接使用 Foo 就可以了，这样代码也会更简单一些。Bar.prototype = new Foo() 的确会创建一个关联到 Bar.prototype 的新对象。但是它使用了 Foo(..) 的“构造函数调用”，如果函数 Foo 有一些副作用（比如写日志、修改状态、注册到其他对象、给 this 添加数据属性，等等）的话，就会影响到 Bar() 的“后代”，后果不堪设想。
+
+在 ES6 之前，我们只能通过设置 .__proto__ 属性来实现，但是这个方法并不是标准并且无法兼容所有浏览器。ES6 添加了辅助函数 Object.setPrototypeOf(..) ，可以用标准并且可靠的方法来修改关联。
+
+```JavaScript
+// ES6 之前需要抛弃默认的 Bar.prototype
+Bar.ptototype = Object.create( Foo.prototype );
+// ES6 开始可以直接修改现有的 Bar.prototype
+Object.setPrototypeOf( Bar.prototype, Foo.prototype );
+```
+如果忽略掉 Object.create(..) 方法带来的轻微性能损失（抛弃的对象需要进行垃圾回收），它实际上比 ES6 及其之后的方法更短而且可读性更高。不过无论如何，这是两种完全不同的语法
+
+__检查“类”关系__
+
+在传统的面向类环境中，检查一个实例（JavaScript 中的对象）的继承祖先（JavaScript 中的委托关联）通常被称为内省（或者反射）。
+
+```JavaScript
+function Foo() {
+// ...
+}
+Foo.prototype.blah = ...;
+var a = new Foo()
+```
+
+何通过内省找出 a 的“祖先”（委托关联）呢？第一种方法是站在“类”的角度来
+判断：
+```JavaScript
+a instanceof Foo; // true
+```
+
+_instanceof: ...的实例_
+
+ instanceof 回答的问题是：在 a 的整条 [[Prototype]] 链中是否有指向 Foo.prototype 的对象？
+
+ 第二种判断 [[Prototype]] 反射的方法，它更加简洁：
+
+```JavaScript
+ Foo.prototype.isPrototypeOf( a ); // true
+```
+
+isPrototypeOf(..) 回答的问题是：在 a 的整条 [[Prototype]] 链中是否出现过 Foo.prototype ？
+
+我们也可以直接获取一个对象的 [[Prototype]] 链。在 ES5 中，标准的方法是：
+```JavaScript
+Object.getPrototypeOf( a );
+
+Object.getPrototypeOf( a ) === Foo.prototype; // true
+```
+
+绝大多数（不是所有！）浏览器也支持一种非标准的方法来访问内部 [[Prototype]] 属性：
+```JavaScript
+a.__proto__ === Foo.prototype; // true
+```
+这个奇怪的 .__proto__ （在 ES6 之前并不是标准！）属性“神奇地”引用了内部的[[Prototype]] 对象，如果你想直接查找（甚至可以通过 .__proto__.__ptoto__... 来遍历）原型链的话，这个方法非常有用。
+
+ .__proto__存在于内置的 Object.prototype 中
+
+ .__proto__ 的实现大致上是这样的
+
+```JavaScript
+ Object.defineProperty( Object.prototype, "__proto__", {
+get: function() {
+return Object.getPrototypeOf( this );
+},
+set: function(o) {
+// ES6 中的 setPrototypeOf(..)
+Object.setPrototypeOf( this, o );
+return o;
+}
+} )
+```
+
+_JavaScript 社区中对于双下划线有一个非官方的称呼，他们会把类似 __proto__的属性称为“笨蛋（dunder）”。所以，JavaScript 潮人会把 __proto__ 叫作“笨蛋 proto”。
+
+### 4.对象关联
+
+[[Prototype]] 机制就是存在于对象中的一个内部链接，它会引用其他对象。
+
+如果在对象上没有找到需要的属性或者方法引用，引擎就会继续在 [[Prototype]] 关联的对象上进行查找。同理，如果在后者中也没有找到需要的引用就会继续查找它的 [[Prototype]] ，以此类推。这一系列对象的链接被称为“原型链”。
+
+#### 4.1 创建关联
+```JavaScript
+var foo = {
+something: function() {
+console.log( "Tell me something good..." );
+}
+};
+var bar = Object.create( foo );
+bar.something(); // Tell me something good...
+```
+我们并不需要类来创建两个对象之间的关系，只需要通过委托来关联对象就足够了。而Object.create(..) 不包含任何“类的诡计”，所以它可以完美地创建我们想要的关联关系。
+
+_注：不会刻意的去包装自己，以期模仿类的行为_
+
+__Object.create(null) 会 创 建 一 个 拥 有 空（ 或 者 说 null ） [[Prototype]]链接的对象，这个对象无法进行委托。由于这个对象没有原型链，所以instanceof 操作符（之前解释过）无法进行判断，因此总是会返回 false 。这些特殊的空 [[Prototype]] 对象通常被称作“字典”，它们完全不会受到原型链的干扰，因此非常适合用来存储数据。__
+
+ES5之前
+```JavaScript
+if (!Object.create) {
+Object.create = function(o) {
+function F(){}
+F.prototype = o;
+return new F();
+};
+}
+```
+
+出于完整性考虑,介绍一下
+
+Object.create(..) 的第二个参数指定了需要添加到新对象中的属性名以及这些属性的属性
+描述符
+
+```JavaScript
+var anotherObject = {
+a:2
+};
+var myObject = Object.create( anotherObject, {
+b: {
+enumerable: false,
+writable: true,
+configurable: false,
+value: 3
+},
+c: {
+enumerable: true,
+writable: false,
+configurable: false,
+value: 4
+}
+});
+myObject.hasOwnProperty( "a" ); // false
+myObject.hasOwnProperty( "b" ); // true
+myObject.hasOwnProperty( "c" ); // true
+myObject.a; // 2
+myObject.b; // 3
+myObject.c; // 4
+```
+
+#### 4.2 关联关系是备用
+
+```JavaScript
+var anotherObject = {
+  cool: function() {
+    console.log( "cool!" );
+  }
+};
+var myObject = Object.create( anotherObject );
+myObject.cool(); // "cool!"
+```
+
+不要在设计时 将原型用来做实例不存在此方法的备用处理，这样会让api变得混乱，不容易读懂。
+
+在 ES6 中有一个被称为“代理”（Proxy）的高端功能，它实现的就是“方法无法找到”时的行为。
+
+下面这样通过委托来实现会更加清晰
+```JavaScript
+var anotherObject = {
+cool: function() {
+console.log( "cool!" );
+}
+};
+var myObject = Object.create( anotherObject );
+myObject.doCool = function() {
+this.cool(); // 内部委托！
+};
+myObject.doCool(); // "cool!"
+```
+
+### 5.小结
+所有普通对象都有内置的 Object.prototype ，指向原型链的顶端（比如说全局作用域），如
+果在原型链中找不到指定的属性就会停止。 toString() 、 valueOf() 和其他一些通用的功能
+都存在于 Object.prototype 对象上，因此语言中所有的对象都可以使用它们
+
+使用 new 调用函数时会把新对象的 .prototype 属性关联到“其他对象”。带 new 的函数调用
+通常被称为“构造函数调用”，尽管它们实际上和传统面向类语言中的类构造函数不一样。
+
+虽然这些 JavaScript 机制和传统面向类语言中的“类初始化”和“类继承”很相似，但
+是 JavaScript 中的机制有一个核心区别，那就是不会进行复制，对象之间是通过内部的
+[[Prototype]] 链关联的
+
+出于各种原因，以“继承”结尾的术语（包括“原型继承”）和其他面向对象的术语都无法帮助你理解 JavaScript 的真实机制（不仅仅是限制我们的思维模式）。相比之下，“委托”是一个更合适的术语，因为对象之间的关系不是复制而是委托（额。。。。）
