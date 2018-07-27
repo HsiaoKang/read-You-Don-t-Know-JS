@@ -2200,3 +2200,728 @@ myObject.doCool(); // "cool!"
 [[Prototype]] 链关联的
 
 出于各种原因，以“继承”结尾的术语（包括“原型继承”）和其他面向对象的术语都无法帮助你理解 JavaScript 的真实机制（不仅仅是限制我们的思维模式）。相比之下，“委托”是一个更合适的术语，因为对象之间的关系不是复制而是委托（额。。。。）
+
+----
+## 第六章 行为委托
+
+[[Prototype]] 机制就是指对象中的一个内部链接引用另一个对象。如果在第一个对象上没有找到需要的属性或者方法引用，引擎就会继续在 [[Prototype]]关联的对象上进行查找。同理，如果在后者中也没有找到需要的引用就会继续查找它的[[Prototype]] ，以此类推。这一系列对象的链接被称为“原型链”。
+
+### 1. 面向委托的设计
+
+#### 1.1 类理论
+
+类设计模式鼓励你在继承时使用方法重写（和多态），比如说在 XYZ 任务中重写 Task 中定义的一些通用方法，甚至在添加新行为时通过 super 调用这个方法的原始版本。
+
+```
+class Task {
+id;
+// 构造函数 Task()
+Task(ID) { id = ID; }
+outputTask() { output( id ); }
+}
+class XYZ inherits Task {
+label;
+// 构造函数 XYZ()
+XYZ(ID,Label) { super( ID ); label = Label; }
+outputTask() { super(); output( label ); }
+}
+class ABC inherits Task {
+// ...
+}
+```
+#### 1.2 委托理论
+
+```JavaScript
+Task = {
+  setID: function(ID) { this.id = ID; },
+  outputID: function() { console.log( this.id ); }
+};
+// 让 XYZ 委托 Task
+XYZ = Object.create( Task );
+XYZ.prepareTask = function(ID,Label) {
+  this.setID( ID );
+  this.label = Label;
+};
+XYZ.outputTaskDetails = function() {
+  this.outputID();
+console.log( this.label );
+};
+// ABC = Object.create( Task );
+// ABC ... = ...
+```
+
+相比于面向类（或者说面向对象），我会把这种编码风格称为“对象关联”（OLOO，objects linked to other objects）。我们真正关心的只是 XYZ 对象（和 ABC 对象）委托了Task 对象
+
+委托行为意味着某些对象（ XYZ ）在找不到属性或者方法引用时会把这个请求委托给另一个对象（ Task ）。
+
+在 API 接口的设计中，委托最好在内部实现，不要直接暴露出去。在之前的例子中我们并没有让开发者通过 API 直接调用 XYZ.setID()。 （当然，可以这么做！）相反，我们把委托 隐藏 在了 API 的内部， XYZ.prepareTask(..) 会委托 Task.setID(..) 。
+
+__互相委托（禁止）__
+
+你无法在两个或两个以上互相（双向）委托的对象之间创建循环委托,如果你引用了一个两边都不存在的属性或者方法，那就会在 [[Prototype]] 链上产生一个无限递归的循环。
+
+#### 1.3 比较思维模型
+
+通过一些示例（ Foo 、 Bar ）代码来比较一下两种设计模式（面向对象和对象关联）具体的实现方法。
+
+```JavaScript
+function Foo(who) {
+  this.me = who;
+}
+Foo.prototype.identify = function() {
+  return "I am " + this.me;
+};
+function Bar(who) {
+  Foo.call( this, who );
+}
+Bar.prototype = Object.create( Foo.prototype );
+Bar.prototype.speak = function() {
+  alert( "Hello, " + this.identify() + "." );
+};
+var b1 = new Bar( "b1" );
+var b2 = new Bar( "b2" );
+b1.speak();
+b2.speak();
+```
+
+```JavaScript
+Foo = {
+  init: function(who) {
+  this.me = who;
+},
+identify: function() {
+  return "I am " + this.me;
+}
+};
+Bar = Object.create( Foo );
+Bar.speak = function() {
+  alert( "Hello, " + this.identify() + "." );
+};
+var b1 = Object.create( Bar );
+b1.init( "b1" );
+var b2 = Object.create( Bar );
+b2.init( "b2" );
+b1.speak();
+b2.speak();
+```
+
+### 2. 类于对象
+
+呸!.jpg
+```JavaScript
+// 父类
+function Widget(width,height) {
+this.width = width || 50;
+this.height = height || 50;
+this.$elem = null;
+}
+Widget.prototype.render = function($where){
+if (this.$elem) {
+this.$elem.css( {
+width: this.width + "px",
+height: this.height + "px"
+} ).appendTo( $where );
+}
+};
+// 子类
+function Button(width,height,label) {
+// 调用“super”构造函数
+Widget.call( this, width, height );
+this.label = label || "Default";
+this.$elem = $( "<button>" ).text( this.label );
+}
+// 让 Button“继承”Widget
+Button.prototype = Object.create( Widget.prototype );
+// 重写 render(..)
+Button.prototype.render = function($where) {
+// “super”调用
+Widget.prototype.render.call( this, $where );
+this.$elem.click( this.onClick.bind( this ) );
+};
+Button.prototype.onClick = function(evt) {
+console.log( "Button '" + this.label + "' clicked!" );
+};
+$( document ).ready( function(){
+var $body = $( document.body );
+var btn1 = new Button( 125, 30, "Hello" );
+var btn2 = new Button( 150, 40, "World" );
+btn1.render( $body );
+btn2.render( $body );
+} );
+```
+
+ES6
+```JavaScript
+class Widget {
+  constructor(width,height) {
+    this.width = width || 50;
+    this.height = height || 50;
+    this.$elem = null;
+  }
+  render($where){
+    if (this.$elem) {
+      this.$elem.css( {
+        width: this.width + "px",
+        height: this.height + "px"
+      } ).appendTo( $where );
+    }
+  }
+}
+class Button extends Widget {
+  constructor(width,height,label) {
+  super( width, height );
+    this.label = label || "Default";
+    this.$elem = $( "<button>" ).text( this.label );
+  }
+  render($where) {
+    super( $where );
+    this.$elem.click( this.onClick.bind( this ) );
+  }
+  onClick(evt) {
+    console.log( "Button '" + this.label + "' clicked!" );
+  }
+}
+$( document ).ready( function(){
+var $body = $( document.body );
+var btn1 = new Button( 125, 30, "Hello" );
+var btn2 = new Button( 150, 40, "World" );
+btn1.render( $body );
+btn2.render( $body );
+} );
+```
+尽管语法上得到了改进，但实际上这里并没有真正的类， class 仍然是通过 [[Prototype]]机制实现的
+
+__委托风格__
+
+```JavaScript
+var Widget = {
+  init: function(width,height){
+    this.width = width || 50;
+    this.height = height || 50;
+    this.$elem = null;
+  },
+  insert: function($where){
+    if (this.$elem) {
+      this.$elem.css( {
+        width: this.width + "px",
+        height: this.height + "px"
+      } ).appendTo( $where );
+    }
+  }
+};
+var Button = Object.create( Widget );
+Button.setup = function(width,height,label){
+  // 委托调用
+  this.init( width, height );
+  this.label = label || "Default";
+  this.$elem = $( "<button>" ).text( this.label );
+};
+Button.build = function($where) {
+  // 委托调用
+  this.insert( $where );
+  this.$elem.click( this.onClick.bind( this ) );
+};
+Button.onClick = function(evt) {
+  console.log( "Button '" + this.label + "' clicked!" );
+};
+$( document ).ready( function(){
+  var $body = $( document.body );
+  var btn1 = Object.create( Button );
+  btn1.setup( 125, 30, "Hello" );
+  var btn2 = Object.create( Button );
+  btn2.setup( 150, 40, "World" );
+  btn1.build( $body );
+  btn2.build( $body );
+} );
+```
+
+从设计模式的角度来说，我们并没有像类一样在两个对象中都定义相同的方法名render(..) ，相反，我们定义了两个更具描述性的方法名（ insert(..) 和 build(..) ）。同
+理，初始化方法分别叫作 init(..) 和 setup(..) 
+
+对象关联可以更好地支持关注分离（separation of concerns）原则，创建和初始化并不需要合并为一个步骤。
+
+### 3. 更简洁的设计
+
+在这个场景中我们有两个控制器对象，一个用来操作网页中的登录表单，另一个用来与服务器进行验证（通信）。
+
+在传统的类设计模式中，我们会把基础的函数定义在名为 Controller 的类中，然后派生两个子类 LoginController 和 AuthController ，它们都继承自 Controller 并且重写了一些基础行为：
+
+```JavaScript
+// 父类
+function Controller() {
+  this.errors = [];
+}
+Controller.prototype.showDialog(title,msg) {
+// 给用户显示标题和消息
+};
+Controller.prototype.success = function(msg) {
+  this.showDialog( "Success", msg );
+};
+Controller.prototype.failure = function(err) {
+  this.errors.push( err );
+  this.showDialog( "Error", err );
+};
+// 子类
+function LoginController() {
+  Controller.call( this );
+}
+// 把子类关联到父类
+LoginController.prototype = Object.create( Controller.prototype );
+LoginController.prototype.getUser = function() {
+  return document.getElementById( "login_username" ).value;
+};
+LoginController.prototype.getPassword = function() {
+  return document.getElementById( "login_password" ).value;
+};
+LoginController.prototype.validateEntry = function(user,pw) {
+  user = user || this.getUser();
+  pw = pw || this.getPassword();
+  if (!(user && pw)) {
+    return this.failure(
+      "Please enter a username & password!"
+    );
+  }
+  else if (user.length < 5) {
+    return this.failure(
+      "Password must be 5+ characters!"
+    );
+  }
+  // 如果执行到这里说明通过验证
+  return true;
+};
+// 重写基础的 failure()
+LoginController.prototype.failure = function(err) {
+  // “super”调用
+  Controller.prototype.failure.call(
+  this,
+  "Login invalid: " + err
+  );
+};
+// 子类
+function AuthController(login) {
+  Controller.call( this );
+  // 合成
+  this.login = login;
+}
+// 把子类关联到父类
+AuthController.prototype = Object.create( Controller.prototype );
+AuthController.prototype.server = function(url,data) {
+  return $.ajax( {
+  url: url,
+  data: data
+  } );
+};
+AuthController.prototype.checkAuth = function() {
+  var user = this.login.getUser();
+  var pw = this.login.getPassword();
+  if (this.login.validateEntry( user, pw )) {
+    this.server( "/check-auth",{
+      user: user,
+      pw: pw
+    } )
+    .then( this.success.bind( this ) )
+    .fail( this.failure.bind( this ) );
+  }
+};
+// 重写基础的 success()
+AuthController.prototype.success = function() {
+  // “super”调用
+  Controller.prototype.success.call( this, "Authenticated!" );
+};
+// 重写基础的 failure()
+AuthController.prototype.failure = function(err) {
+  // “super”调用
+  Controller.prototype.failure.call(
+  this,
+  "Auth Failed: " + err
+  );
+};
+var auth = new AuthController();
+auth.checkAuth(
+  // 除了继承，我们还需要合成
+  new LoginController()
+);
+```
+
+```JavaScript
+var LoginController = {
+  errors: [],
+  getUser: function() {
+    return document.getElementById(
+    "login_username"
+    ).value;
+  },
+  getPassword: function() {
+    return document.getElementById(
+    "login_password"
+    ).value;
+  },
+  validateEntry: function(user,pw) {
+    user = user || this.getUser();
+    pw = pw || this.getPassword();
+    if (!(user && pw)) {
+      return this.failure(
+      "Please enter a username & password!"
+      );
+    }
+    else if (user.length < 5) {
+      return this.failure(
+      "Password must be 5+ characters!"
+      );
+    }
+    // 如果执行到这里说明通过验证
+    return true;
+  },
+  showDialog: function(title,msg) {
+  // 给用户显示标题和消息
+  },
+  failure: function(err) {
+    this.errors.push( err );
+    this.showDialog( "Error", "Login invalid: " + err );
+  }
+};
+// 让 AuthController 委托 LoginController
+var AuthController = Object.create( LoginController );
+AuthController.errors = [];
+AuthController.checkAuth = function() {
+  var user = this.getUser();
+  var pw = this.getPassword();
+  if (this.validateEntry( user, pw )) {
+  this.server( "/check-auth",{
+  user: user,
+  pw: pw
+  } )
+  .then( this.accepted.bind( this ) )
+  .fail( this.rejected.bind( this ) );
+  }
+};
+AuthController.server = function(url,data) {
+  return $.ajax( {
+  url: url,
+  data: data
+  } );
+};
+AuthController.accepted = function() {
+  this.showDialog( "Success", "Authenticated!" )
+};
+AuthController.rejected = function(err) {
+  this.failure( "Auth Failed: " + err );
+};
+```
+
+### 4.更好的语法
+
+ES6 的 class 语法可以简洁地定义类方法，在ES6中我们可以在任意对象的字面形式中使用简洁方法声明,
+
+```JavaScript
+var LoginController = {
+errors: [],
+getUser() { // 妈妈再也不用担心代码里有 function 了！
+// ...
+},
+getPassword() {
+// ...
+}
+// ...
+};
+```
+唯一的区别是对象的字面形式仍然需要使用“,”来分隔元素，而 class 语法不需要。
+
+你可以使用对象的字面形式（这样就可以使用简洁方法定义）来改 写 之 前 繁 琐 的 属 性 赋 值 语 法（ 比 如 AuthController 的 定 义 ）， 然 后 用 Object.setPrototypeOf(..) 来修改它的 [[Prototype]] ：
+
+```JavaScript
+// 使用更好的对象字面形式语法和简洁方法
+var AuthController = {
+errors: [],
+checkAuth() {
+// ...
+},
+server(url,data) {
+// ...
+}
+// ...
+};
+// 现在把 AuthController 关联到 LoginController
+Object.setPrototypeOf( AuthController, LoginController );
+```
+__反词法__
+
+匿名函数表达式的三大主要缺点
+
+1. 调试栈更难追踪；
+2. 自我引用（递归、事件（解除）绑定，等等）更难；
+3. 代码（稍微）更难理解
+
+```JavaScript
+var Foo = {
+bar: function(x) {
+if(x<10){
+return Foo.bar( x * 2 );
+}
+行为委托 ｜ 185
+return x;
+},
+baz: function baz(x) {
+if(x < 10){
+return baz( x * 2 );
+}
+return x;
+}
+};
+```
+
+简洁方法无法避免第 2 个缺点，它们不具备可以自我引用的词法标识符。本例中使用 Foo.bar(x*2) 就足够了，但是在许多情况下无法使用这种方法，比如多个对象通过代理共享函数、使用 this 绑定，等等。这种情况下最好的办法就是使用函数对象的name 标识符来进行真正的自我引用。
+
+### 5. 内省
+
+自省就是检查实例的类型。类实例的自省主要目的是通过创建方式来判断对象的结构和功能。
+```JavaScript
+function Foo() {
+// ...
+}
+Foo.prototype.something = function(){
+// ...
+}
+var a1 = new Foo();
+// 之后
+if (a1 instanceof Foo) {
+a1.something();
+}
+```
+因为 Foo.prototype （不是 Foo ！）在 a1 的 [[Prototype]] 链上（参见第 5 章），所以instanceof 操作（会令人困惑地）告诉我们 a1 是 Foo “类”的一个实例。
+
+instanceof 语法会产生语义困惑而且非常不直观。如果你想检查对象 a1 和某个对象的关系，那必须使用另一个引用该对象的函数才行——你不能直接判断两个对象是否关联。
+
+```JavaScript
+function Foo() { /* .. */ }
+Foo.prototype...
+function Bar() { /* .. */ }
+Bar.prototype = Object.create( Foo.prototype );
+var b1 = new Bar( "b1" );
+//如果要使用 instanceof 和 .prototype 语义来检查本例中实体的关系，那必须这样做
+
+// 让 Foo 和 Bar 互相关联
+Bar.prototype instanceof Foo; // true
+Object.getPrototypeOf( Bar.prototype )=== Foo.prototype; // true
+Foo.prototype.isPrototypeOf( Bar.prototype ); // true
+// 让 b1 关联到 Foo 和 Bar
+b1 instanceof Foo; // true
+b1 instanceof Bar; // true
+Object.getPrototypeOf( b1 ) === Bar.prototype; // true
+Foo.prototype.isPrototypeOf( b1 ); // true
+Bar.prototype.isPrototypeOf( b1 ); // true
+```
+必须使用 Bar.prototype instanceof Foo 。
+
+还有一种常见但是可能更加脆弱的内省模式，许多开发者认为它比 instanceof 更好。
+```JavaScript
+if (a1.something) {
+a1.something();
+}
+```
+但是“鸭子类型”通常会在测试之外做出许多关于对象功能的假设
+
+出于各种各样的原因，我们需要判断一个对象引用是否是 Promise，但是判断的方法是检查对象是否有 then() 方法。换句话说，如果对象有 then() 方法，ES6 的 Promise 就会认为这个对象是“可持续”（thenable）的，因此会期望它具有 Promise 的所有标准行为。
+
+如果有一个不是 Promise 但是具有 then() 方法的对象，那你千万不要把它用在 ES6 的Promise 机制中，否则会出错。
+
+对于对象关联的设计
+
+```JavaScript
+var Foo = { /* .. */ };
+var Bar = Object.create( Foo );
+Bar...
+var b1 = Object.create( Bar );
+// 使用对象关联时，所有的对象都是通过 [[Prototype]] 委托互相关联，下面是内省的方法，
+
+// 让 Foo 和 Bar 互相关联
+Foo.isPrototypeOf( Bar ); // true
+Object.getPrototypeOf( Bar ) === Foo; // true
+// 让 b1 关联到 Foo 和 Bar
+Foo.isPrototypeOf( b1 ); // true
+Bar.isPrototypeOf( b1 ); // true
+Object.getPrototypeOf( b1 ) === Bar; // true
+```
+
+### 6. 小结
+
+在软件架构中你可以选择是否使用类和继承设计模式。大多数开发者理所当然地认为类是唯一（合适）的代码组织方式，但是本章中我们看到了另一种更少见但是更强大的设计模式：行为委托。
+
+行为委托认为对象之间是兄弟关系，互相委托，而不是父类和子类的关系。JavaScript 的[[Prototype]] 机制本质上就是行为委托机制。也就是说，我们可以选择在 JavaScript 中努力实现类机制（参见第 4 和第 5 章），也可以拥抱更自然的 [[Prototype]] 委托机制。当你只用对象来设计代码时，不仅可以让语法更加简洁，而且可以让代码结构更加清晰。
+
+对象关联（对象之前互相关联）是一种编码风格，它倡导的是直接创建和关联对象，不把它们抽象成类。对象关联可以用基于 [[Prototype]] 的行为委托非常自然地实现。
+
+
+## Class
+
+```JavaScript
+class Widget {
+constructor(width,height) {
+this.width = width || 50;
+this.height = height || 50;
+this.$elem = null;
+}
+render($where){
+if (this.$elem) {
+this.$elem.css( {
+width: this.width + "px",
+height: this.height + "px"
+} ).appendTo( $where );
+}
+}
+}
+class Button extends Widget {
+constructor(width,height,label) {
+super( width, height );
+this.label = label || "Default";
+this.$elem = $( "<button>" ).text( this.label );
+}
+render($where) {
+super( $where );
+this.$elem.click( this.onClick.bind( this ) );
+}
+onClick(evt) {
+console.log( "Button '" + this.label + "' clicked!" );
+}
+}
+```
+好处：
+
+1. （基本上，下面会详细介绍）不再引用杂乱的 .prototype 了。
+2. Button 声 明 时 直 接“ 继 承 ” 了 Widget ， 不 再 需 要 通 过 Object.create(..) 来 替
+换 .prototype 对象，也不需要设置 .__proto__ 或者 Object.setPrototypeOf(..) 。
+3. 可以通过 super(..) 来实现相对多态，这样任何方法都可以引用原型链上层的同名方
+法。这可以解决第 4 章提到过的那个问题：构造函数不属于类，所以无法互相引用——
+super() 可以完美解决构造函数的问题。
+4. class 字面语法不能声明属性（只能声明方法）。看起来这是一种限制，但是它会排除
+掉许多不好的情况，如果没有这种限制的话，原型链末端的“实例”可能会意外地获取
+其他地方的属性（这些属性隐式被所有“实例”所“共享”）。所以， class 语法实际上
+可以帮助你避免犯错。
+5. 可以通过 extends 很自然地扩展对象（子）类型，甚至是内置的对象（子）类型，比如
+Array 或 RegExp 。没有 class ..extends 语法时，想实现这一点是非常困难的，基本上
+只有框架的作者才能搞清楚这一点。但是现在可以轻而易举地做到！
+
+坏处：
+class 基本上只是现有 [[Prototype]] （委托！）机制的一种语法糖。并不会像传统面向类的语言一样在声明时静态复制所有行为。如果你（有意或无意）修改或者替换了父“类”中的一个方法，那子“类”和所有实例都会受到影响，因为它们在定义时并没有进行复制，只是使用基于 [[Prototype]] 的实时委托：
+
+```JavaScript
+class C {
+constructor() {
+this.num = Math.random();
+}
+rand() {
+console.log( "Random: " + this.num );
+}
+}
+var c1 = new C();
+c1.rand(); // "Random: 0.4324299..."
+C.prototype.rand = function() {
+console.log( "Random: " + Math.round( this.num * 1000 ));
+};
+var c2 = new C();
+c2.rand(); // "Random: 867"
+c1.rand(); // "Random: 432" ——噢！
+```
+class 语法无法定义类成员属性（只能定义方法），如果为了跟踪实例之间共享状态必须要这么做，那你只能使用丑陋的 .prototype 语法
+
+```JavaScript
+class C {
+constructor() {
+// 确保修改的是共享状态而不是在实例上创建一个屏蔽属性！
+C.prototype.count++;
+// this.count 可以通过委托实现我们想要的功能
+console.log( "Hello: " + this.count );
+}
+192 ｜ 附录 A
+}
+// 直接向 prototype 对象上添加一个共享状态
+C.prototype.count = 0;
+var c1 = new C();
+// Hello: 1
+var c2 = new C();
+// Hello: 2
+c1.count === 2; // true
+c1.count === c2.count; // true
+```
+它违背了 class 语法的本意，在实现中暴露（泄露！）了 .prototype 。
+
+如果使用 this.count++ 的话，我们会很惊讶地发现在对象 c1 和 c2 上都创建了 .count 属性，而不是更新共享状态。 class 没有办法解决这个问题
+
+意外屏蔽
+```JavaScript
+class C {
+constructor(id) {
+// 噢，郁闷，我们的 id 属性屏蔽了 id() 方法
+this.id = id;
+}
+id() {
+console.log( "Id: " + id );
+}
+}
+var c1 = new C( "c1" );
+c1.id(); // TypeError -- c1.id 现在是字符串 "c1"
+```
+super 也存在一些非常细微的问题。你可能认为 super 的绑定方法和 this 类似（参见第 2 章），也就是说，无论目前的方法在原型链中处于什么位置， super 总会绑定到链中的上一层。
+
+然而，出于性能考虑（ this 绑定已经是很大的开销了）， super 并不是动态绑定的，它会在声明时“静态”绑定。没什么大不了的，是吧？
+
+呃……可能，可能不是这样。如果你和大多数 JavaScript 开发者一样，会用许多不同的方法把函数应用在不同的（使用 class 定义的）对象上，那你可能不知道，每次执行这些操作时都必须重新绑定 super 。
+
+所以你可能（写作本书时，TC39 正在讨论这个话题）需要用 toMethod(..) 来手动绑定super （类似用 bind(..) 来绑定 this）
+
+super绑定的一些不同
+
+```JavaScript
+class P {
+foo() { console.log( "P.foo" ); }
+}
+class C extends P {
+foo() {
+super();
+}
+}
+var c1 = new C();
+c1.foo(); // "P.foo"
+var D = {
+foo: function() { console.log( "D.foo" ); }
+};
+var E = {
+foo: C.prototype.foo
+};
+// 把 E 委托到 D
+Object.setPrototypeOf( E, D );
+E.foo(); // "P.foo"
+```
+
+如果你认为 super 会动态绑定（非常合理！），那你可能期望 super() 会自动识别出 E 委托了 D ，所以 E.foo() 中的 super() 应该调用 D.foo() 。
+
+但事实并不是这样。出于性能考虑， super 并不像 this 一样是晚绑定（late bound， 或者说动态绑定）的，它在 [[HomeObject]].[[Prototype]] 上， [[HomeObject]] 会在创建时静态绑定在本例中， super() 会调用 P.foo() ，因为方法的 [[HomeObject]] 仍然是 C ， C.[[Prototype]]是 P 
+
+确实可以手动修改 super 绑定，使用 toMethod(..) 绑定或重新绑定方法的 [[HomeObject]]（就像设置对象的 [[Prototype]] 一样！）就可以解决本例的问题：
+
+```JavaScript
+var D = {
+foo: function() { console.log( "D.foo" ); }
+};
+// 把 E 委托到 D
+var E = Object.create( D );
+// 手动把 foo 的 [[HomeObject]] 绑定到 E，E.[[Prototype]] 是 D， 所以 super() 是 D.foo()
+E.foo = C.prototype.foo.toMethod( E, "foo" );
+E.foo(); // "D.foo
+```
+
+toMethod(..) 会复制方法并把 homeObject 当作第一个参数（也就是我们传入的 E ），第二个参数（可选）是新方法的名称（默认是原方法名）
+
+
+ES6 的 class 最大的问题在于，（像传统的类一样）它的语法有时会让你认为，定义了一个 class 后，它就变成了一个（未来会被实例化的）东西的静态定义。你会彻底忽略 C 是一个对象，是一个具体的可以直接交互的东西。
+
+在传统面向类的语言中，类定义之后就不会进行修改，所以类的设计模式就不支持修改,但是 JavaScript 最强大的特性之一就是它的动态性，任何对象的定义都可以修改（除非你把它设置成不可变）。
+
+_注： 如果你使用 .bind(..) 函数来硬绑定函数（参见第 2 章），那么这个函数不会像普通函数那样被 ES6 的 extend 扩展到子类中。
+
+__小结__
+
+class 很好地伪装成 JavaScript 中类和继承设计模式的解决方案，但是它实际上起到了反作
+用：它隐藏了许多问题并且带来了更多更细小但是危险的问题。
+class 加深了过去 20 年中对于 JavaScript 中“类”的误解，在某些方面，它产生的问题比
+解决的多，而且让本来优雅简洁的 [[Prototype]] 机制变得非常别扭。
